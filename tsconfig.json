@@ -1,6 +1,16 @@
 {
-  "extends": "../core/tsconfig.json",
   "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "lib": ["ES2021.String"],
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowSyntheticDefaultImports": true,
+    "baseUrl": ".",
+    "declarationMap": true,
+    "sourceMap": true,
     "outDir": "dist",
     "rootDir": "./src",
     "typeRoots": ["./node_modules/@types", "./src/types"],
