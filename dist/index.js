@@ -6,9 +6,10 @@ import { parseEther } from "viem";
 // src/providers/wallet.ts
 import * as path from "node:path";
 import {
-  elizaLogger
+  elizaLogger,
+  TEEMode
 } from "@elizaos/core";
-import { PhalaDeriveKeyProvider, TEEMode } from "@elizaos/plugin-tee";
+import { PhalaDeriveKeyProvider } from "@elizaos/plugin-tee";
 import {
   http,
   createPublicClient,
