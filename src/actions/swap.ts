@@ -45,13 +45,17 @@ export class SwapAction {
           rpcUrls: {
             public: { http: [config.rpcUrls.default.http[0]] },
           },
-          blockExplorerUrls: [config.blockExplorers.default.url],
+          blockExplorerUrls: config.blockExplorers?.default?.url
+            ? [config.blockExplorers.default.url]
+            : [],
           metamask: {
             chainId: `0x${config.id.toString(16)}`,
             chainName: config.name,
             nativeCurrency: config.nativeCurrency,
             rpcUrls: [config.rpcUrls.default.http[0]],
-            blockExplorerUrls: [config.blockExplorers.default.url],
+            blockExplorerUrls: config.blockExplorers?.default?.url
+              ? [config.blockExplorers.default.url]
+              : [],
           },
           coin: config.nativeCurrency.symbol,
           mainnet: true,
@@ -107,11 +111,14 @@ export class SwapAction {
       abi: decimalsAbi,
       functionName: 'decimals',
     });
-    const quotes: SwapQuote[] | undefined = await Promise.all([
+    const quotesPromises: Promise<SwapQuote | undefined>[] = [
       this.getLifiQuote(fromAddress, params, decimals),
       this.getBebopQuote(fromAddress, params, decimals),
-    ]);
-    const sortedQuotes: SwapQuote[] = quotes.filter((quote) => quote !== undefined) as SwapQuote[];
+    ];
+    const quotesResults = await Promise.all(quotesPromises);
+    const sortedQuotes: SwapQuote[] = quotesResults.filter(
+      (quote): quote is SwapQuote => quote !== undefined
+    );
     sortedQuotes.sort((a, b) => (BigInt(a.minOutputAmount) > BigInt(b.minOutputAmount) ? -1 : 1));
     if (sortedQuotes.length === 0) throw new Error('No routes found');
     return sortedQuotes;
@@ -131,7 +138,7 @@ export class SwapAction {
         fromAmount: parseUnits(params.amount, fromTokenDecimals).toString(),
         fromAddress: fromAddress,
         options: {
-          slippage: params.slippage / 100 || 0.005,
+          slippage: params.slippage !== undefined ? params.slippage / 100 : 0.005,
           order: 'RECOMMENDED',
         },
       });
@@ -141,8 +148,9 @@ export class SwapAction {
         minOutputAmount: routes.routes[0].steps[0].estimate.toAmountMin,
         swapData: routes.routes[0],
       };
-    } catch (error) {
-      elizaLogger.error('Error in getLifiQuote:', error.message);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      elizaLogger.error('Error in getLifiQuote:', errorMessage);
       return undefined;
     }
   }
@@ -188,8 +196,9 @@ export class SwapAction {
         minOutputAmount: data.routes[0].quote.buyTokens[params.toToken].minimumAmount.toString(),
         swapData: route,
       };
-    } catch (error) {
-      elizaLogger.error('Error in getBebopQuote:', error.message);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      elizaLogger.error('Error in getBebopQuote:', errorMessage);
       return undefined;
     }
   }
@@ -211,8 +220,9 @@ export class SwapAction {
         data: process.data as `0x${string}`,
         chainId: route.fromChainId,
       };
-    } catch (error) {
-      elizaLogger.error(`Failed to execute lifi quote: ${error}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      elizaLogger.error(`Failed to execute lifi quote: ${errorMessage}`);
       return undefined;
     }
   }
@@ -232,52 +242,46 @@ export class SwapAction {
           functionName: 'allowance',
           args: [bebopRoute.from, bebopRoute.approvalTarget],
         });
+
+      const walletClient = this.walletProvider.getWalletClient(params.chain);
+
+      if (!walletClient.account) {
+        throw new Error('Wallet account is not available');
+      }
+
       if (allowance < BigInt(bebopRoute.sellAmount)) {
         const approvalData = encodeFunctionData({
           abi: parseAbi(['function approve(address,uint256)']),
           functionName: 'approve',
           args: [bebopRoute.approvalTarget, BigInt(bebopRoute.sellAmount)],
         });
-        await this.walletProvider.getWalletClient(params.chain).sendTransaction({
-          account: this.walletProvider.getWalletClient(params.chain).account,
+        await walletClient.sendTransaction({
+          account: walletClient.account,
           to: params.fromToken,
           value: 0n,
           data: approvalData,
-          kzg: {
-            blobToKzgCommitment: (_: ByteArray): ByteArray => {
-              throw new Error('Function not implemented.');
-            },
-            computeBlobKzgProof: (_blob: ByteArray, _commitment: ByteArray): ByteArray => {
-              throw new Error('Function not implemented.');
-            },
-          },
           chain: undefined,
         });
       }
-      const hash = await this.walletProvider.getWalletClient(params.chain).sendTransaction({
-        account: this.walletProvider.getWalletClient(params.chain).account,
+
+      const hash = await walletClient.sendTransaction({
+        account: walletClient.account,
         to: bebopRoute.to,
         value: BigInt(bebopRoute.value),
         data: bebopRoute.data as Hex,
-        kzg: {
-          blobToKzgCommitment: (_: ByteArray): ByteArray => {
-            throw new Error('Function not implemented.');
-          },
-          computeBlobKzgProof: (_blob: ByteArray, _commitment: ByteArray): ByteArray => {
-            throw new Error('Function not implemented.');
-          },
-        },
         chain: undefined,
       });
+
       return {
         hash,
-        from: this.walletProvider.getWalletClient(params.chain).account.address,
+        from: walletClient.account.address,
         to: bebopRoute.to,
         value: BigInt(bebopRoute.value),
         data: bebopRoute.data as Hex,
       };
-    } catch (error) {
-      elizaLogger.error(`Failed to execute bebop quote: ${error}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      elizaLogger.error(`Failed to execute bebop quote: ${errorMessage}`);
       return undefined;
     }
   }
@@ -347,12 +351,13 @@ export const swapAction = {
         });
       }
       return true;
-    } catch (error) {
-      console.error('Error in swap handler:', error.message);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('Error in swap handler:', errorMessage);
       if (callback) {
         callback({
-          text: `Error: ${error.message}`,
-          content: { error: error.message },
+          text: `Error: ${errorMessage}`,
+          content: { error: errorMessage },
         });
       }
       return false;

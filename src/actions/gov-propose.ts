@@ -15,6 +15,10 @@ export class ProposeAction {
   async propose(params: ProposeProposalParams): Promise<Transaction> {
     const walletClient = this.walletProvider.getWalletClient(params.chain);
 
+    if (!walletClient.account) {
+      throw new Error('Wallet account is not available');
+    }
+
     const txData = encodeFunctionData({
       abi: governorArtifacts.abi,
       functionName: 'propose',
@@ -33,14 +37,6 @@ export class ProposeAction {
         value: BigInt(0),
         data: txData as Hex,
         chain: chainConfig,
-        kzg: {
-          blobToKzgCommitment: (_blob: ByteArray): ByteArray => {
-            throw new Error('Function not implemented.');
-          },
-          computeBlobKzgProof: (_blob: ByteArray, _commitment: ByteArray): ByteArray => {
-            throw new Error('Function not implemented.');
-          },
-        },
       });
 
       const receipt = await publicClient.waitForTransactionReceipt({
@@ -56,8 +52,9 @@ export class ProposeAction {
         chainId: this.walletProvider.getChainConfigs(params.chain).id,
         logs: receipt.logs,
       };
-    } catch (error) {
-      throw new Error(`Vote failed: ${error.message}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Vote failed: ${errorMessage}`);
     }
   }
 }
@@ -99,10 +96,11 @@ export const proposeAction = {
       const walletProvider = new WalletProvider(privateKey, runtime);
       const action = new ProposeAction(walletProvider);
       return await action.propose(proposeParams);
-    } catch (error) {
-      console.error('Error in propose handler:', error.message);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('Error in propose handler:', errorMessage);
       if (callback) {
-        callback({ text: `Error: ${error.message}` });
+        callback({ text: `Error: ${errorMessage}` });
       }
       return false;
     }

@@ -15,6 +15,10 @@ export class VoteAction {
   async vote(params: VoteParams): Promise<Transaction> {
     const walletClient = this.walletProvider.getWalletClient(params.chain);
 
+    if (!walletClient.account) {
+      throw new Error('Wallet account is not available');
+    }
+
     const proposalId = BigInt(params.proposalId.toString());
     const support = BigInt(params.support.toString());
 
@@ -36,14 +40,6 @@ export class VoteAction {
         value: BigInt(0),
         data: txData as Hex,
         chain: chainConfig,
-        kzg: {
-          blobToKzgCommitment: (_blob: ByteArray): ByteArray => {
-            throw new Error('Function not implemented.');
-          },
-          computeBlobKzgProof: (_blob: ByteArray, _commitment: ByteArray): ByteArray => {
-            throw new Error('Function not implemented.');
-          },
-        },
       });
 
       const receipt = await publicClient.waitForTransactionReceipt({
@@ -59,8 +55,9 @@ export class VoteAction {
         chainId: this.walletProvider.getChainConfigs(params.chain).id,
         logs: receipt.logs,
       };
-    } catch (error) {
-      throw new Error(`Vote failed: ${error.message}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Vote failed: ${errorMessage}`);
     }
   }
 }
@@ -93,10 +90,11 @@ export const voteAction = {
       const walletProvider = new WalletProvider(privateKey, runtime);
       const action = new VoteAction(walletProvider);
       return await action.vote(voteParams);
-    } catch (error) {
-      console.error('Error in vote handler:', error.message);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('Error in vote handler:', errorMessage);
       if (callback) {
-        callback({ text: `Error: ${error.message}` });
+        callback({ text: `Error: ${errorMessage}` });
       }
       return false;
     }

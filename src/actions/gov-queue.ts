@@ -22,6 +22,10 @@ export class QueueAction {
   async queue(params: QueueProposalParams): Promise<Transaction> {
     const walletClient = this.walletProvider.getWalletClient(params.chain);
 
+    if (!walletClient.account) {
+      throw new Error('Wallet account is not available');
+    }
+
     const descriptionHash = keccak256(stringToHex(params.description));
 
     const txData = encodeFunctionData({
@@ -42,14 +46,6 @@ export class QueueAction {
         value: BigInt(0),
         data: txData as Hex,
         chain: chainConfig,
-        kzg: {
-          blobToKzgCommitment: (_blob: ByteArray): ByteArray => {
-            throw new Error('Function not implemented.');
-          },
-          computeBlobKzgProof: (_blob: ByteArray, _commitment: ByteArray): ByteArray => {
-            throw new Error('Function not implemented.');
-          },
-        },
       });
 
       const receipt = await publicClient.waitForTransactionReceipt({
@@ -65,8 +61,9 @@ export class QueueAction {
         chainId: this.walletProvider.getChainConfigs(params.chain).id,
         logs: receipt.logs,
       };
-    } catch (error) {
-      throw new Error(`Vote failed: ${error.message}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Vote failed: ${errorMessage}`);
     }
   }
 }
@@ -108,10 +105,11 @@ export const queueAction = {
       const walletProvider = new WalletProvider(privateKey, runtime);
       const action = new QueueAction(walletProvider);
       return await action.queue(queueParams);
-    } catch (error) {
-      console.error('Error in queue handler:', error.message);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('Error in queue handler:', errorMessage);
       if (callback) {
-        callback({ text: `Error: ${error.message}` });
+        callback({ text: `Error: ${errorMessage}` });
       }
       return false;
     }

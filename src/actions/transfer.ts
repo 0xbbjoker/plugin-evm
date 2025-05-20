@@ -24,20 +24,16 @@ export class TransferAction {
 
     const walletClient = this.walletProvider.getWalletClient(params.fromChain);
 
+    if (!walletClient.account) {
+      throw new Error('Wallet account is not available');
+    }
+
     try {
       const hash = await walletClient.sendTransaction({
         account: walletClient.account,
         to: params.toAddress,
         value: parseEther(params.amount),
         data: params.data as Hex,
-        kzg: {
-          blobToKzgCommitment: (_: ByteArray): ByteArray => {
-            throw new Error('Function not implemented.');
-          },
-          computeBlobKzgProof: (_blob: ByteArray, _commitment: ByteArray): ByteArray => {
-            throw new Error('Function not implemented.');
-          },
-        },
         chain: undefined,
       });
 
@@ -48,8 +44,9 @@ export class TransferAction {
         value: parseEther(params.amount),
         data: params.data as Hex,
       };
-    } catch (error) {
-      throw new Error(`Transfer failed: ${error.message}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Transfer failed: ${errorMessage}`);
     }
   }
 }
@@ -100,7 +97,7 @@ export const transferAction: Action = {
   handler: async (
     runtime: IAgentRuntime,
     message: Memory,
-    state: State,
+    state: State | undefined,
     _options: any,
     callback?: HandlerCallback
   ) => {
@@ -129,12 +126,13 @@ export const transferAction: Action = {
         });
       }
       return true;
-    } catch (error) {
-      console.error('Error during token transfer:', error);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('Error during token transfer:', errorMessage);
       if (callback) {
         callback({
-          text: `Error transferring tokens: ${error.message}`,
-          content: { error: error.message },
+          text: `Error transferring tokens: ${errorMessage}`,
+          content: { error: errorMessage },
         });
       }
       return false;
