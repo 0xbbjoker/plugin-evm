@@ -8,7 +8,6 @@ import {
   elizaLogger,
   TEEMode,
   ServiceType,
-  getTypedService,
 } from '@elizaos/core';
 import type {
   Account,
@@ -247,22 +246,27 @@ export const initWalletProvider = async (runtime: IAgentRuntime) => {
       throw new Error('WALLET_SECRET_SALT required when TEE_MODE is enabled');
     }
 
-    // Get the TEE service as a TypedService
-    const teeService = getTypedService(runtime, ServiceType.TEE);
+    // Get the TEE service
+    const teeService = runtime.getService(ServiceType.TEE);
 
+    // Type guard to check if the service exists and has the required method
     if (!teeService) {
       throw new Error('TEE service not found');
     }
 
-    // Use the generic process method
-    const deriveKeyResult = await teeService.process({
-      action: 'deriveEcdsaKeypair',
-      salt: walletSecretSalt,
-      subject: 'evm',
-      agentId: runtime.agentId,
-    });
+    // Check if the service has the deriveEcdsaKeypair method and it's a function
+    if (typeof (teeService as any).deriveEcdsaKeypair !== 'function') {
+      throw new Error('TEE service does not implement deriveEcdsaKeypair method');
+    }
 
-    return new WalletProvider(deriveKeyResult.keypair, runtime, chains);
+    // Directly call the deriveEcdsaKeypair method
+    const { keypair, attestation } = await (teeService as any).deriveEcdsaKeypair(
+      walletSecretSalt,
+      'evm',
+      runtime.agentId
+    );
+
+    return new WalletProvider(keypair, runtime, chains);
   }
   const privateKey = runtime.getSetting('EVM_PRIVATE_KEY') as `0x${string}`;
   if (!privateKey) {
